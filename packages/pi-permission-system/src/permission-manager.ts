@@ -417,6 +417,7 @@ function derivePolicyLoaderOptions(
   cwd: string | undefined | null,
 ): PolicyLoaderOptions {
   return {
+    agentDir,
     globalConfigPath: getGlobalConfigPath(agentDir),
     agentsDir: join(agentDir, "agents"),
     projectGlobalConfigPath: cwd ? getProjectConfigPath(cwd) : undefined,

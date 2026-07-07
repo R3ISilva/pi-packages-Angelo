@@ -3,10 +3,11 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   loadUnifiedConfig,
+  mergeUnifiedConfigs,
   normalizeFlatPermissionValue,
   stripJsonComments,
 } from "./config-loader";
-import { getGlobalConfigPath } from "./config-paths";
+import { getGlobalConfigPath, getGlobalConfigsDirConfigPath } from "./config-paths";
 import type { ScopeConfig } from "./types";
 import { toRecord } from "./value-guards";
 import { extractFrontmatter, parseSimpleYamlMap } from "./yaml-frontmatter";
@@ -134,6 +135,7 @@ export interface PolicyLoaderOptions {
   projectAgentsDir?: string;
   globalMcpConfigPath?: string;
   mcpServerNames?: readonly string[];
+  agentDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +148,7 @@ export interface PolicyLoaderOptions {
  */
 export class FilePolicyLoader implements PolicyLoader {
   private readonly globalConfigPath: string;
+  private readonly configsDirConfigPath: string;
   private readonly agentsDir: string;
   private readonly projectGlobalConfigPath: string | null;
   private readonly projectAgentsDir: string | null;
@@ -171,6 +174,8 @@ export class FilePolicyLoader implements PolicyLoader {
     this.globalConfigPath =
       options.globalConfigPath ?? defaultGlobalConfigPath();
     this.agentsDir = options.agentsDir ?? defaultAgentsDir();
+    const agentDir = options.agentDir ?? getAgentDir();
+    this.configsDirConfigPath = getGlobalConfigsDirConfigPath(agentDir);
     this.projectGlobalConfigPath = options.projectGlobalConfigPath ?? null;
     this.projectAgentsDir = options.projectAgentsDir ?? null;
     this.globalMcpConfigPath =
@@ -203,16 +208,25 @@ export class FilePolicyLoader implements PolicyLoader {
   // ── Scope loaders ────────────────────────────────────────────────────
 
   loadGlobalConfig(): ScopeConfig {
-    const stamp = getFileStamp(this.globalConfigPath);
+    const primaryStamp = getFileStamp(this.globalConfigPath);
+    const fallbackStamp = getFileStamp(this.configsDirConfigPath);
+    const stamp = `${primaryStamp}|${fallbackStamp}`;
     if (this.globalConfigCache?.stamp === stamp) {
       return this.globalConfigCache.value;
     }
 
-    const { config, issues } = loadUnifiedConfig(this.globalConfigPath);
-    this.accumulateConfigIssues(issues);
+    // Load primary path: agent/extensions/pi-permission-system/config.json
+    const { config: primaryConfig, issues: primaryIssues } = loadUnifiedConfig(this.globalConfigPath);
+    this.accumulateConfigIssues(primaryIssues);
+
+    // Merge with fallback path: agent/configs/pi-permission-system.json (lower precedence)
+    const { config: fallbackConfig, issues: fallbackIssues } = loadUnifiedConfig(this.configsDirConfigPath);
+    this.accumulateConfigIssues(fallbackIssues);
+
+    const mergedConfig = mergeUnifiedConfigs(fallbackConfig, primaryConfig);
 
     const value: ScopeConfig = {
-      permission: config.permission,
+      permission: mergedConfig.permission,
     };
 
     this.globalConfigCache = { stamp, value };
@@ -330,7 +344,7 @@ export class FilePolicyLoader implements PolicyLoader {
         ? getFileStamp(join(this.projectAgentsDir, `${agentName}.md`))
         : "none";
 
-    return `${getFileStamp(this.globalConfigPath)}|${projectStamp}|${agentStamp}|${projectAgentStamp}`;
+    return `${getFileStamp(this.globalConfigPath)}|${getFileStamp(this.configsDirConfigPath)}|${projectStamp}|${agentStamp}|${projectAgentStamp}`;
   }
 
   // ── Resolved paths ────────────────────────────────────────────────────
@@ -338,7 +352,7 @@ export class FilePolicyLoader implements PolicyLoader {
   getResolvedPolicyPaths(): ResolvedPolicyPaths {
     return {
       globalConfigPath: this.globalConfigPath,
-      globalConfigExists: existsSync(this.globalConfigPath),
+      globalConfigExists: existsSync(this.globalConfigPath) || existsSync(this.configsDirConfigPath),
       projectConfigPath: this.projectGlobalConfigPath,
       projectConfigExists: this.projectGlobalConfigPath
         ? existsSync(this.projectGlobalConfigPath)
