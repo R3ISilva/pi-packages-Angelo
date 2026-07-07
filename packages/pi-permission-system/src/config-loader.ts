@@ -3,6 +3,7 @@ import { normalize } from "node:path";
 import type { ZodError } from "zod";
 import {
   getGlobalConfigPath,
+  getGlobalConfigsDirConfigPath,
   getLegacyExtensionConfigPath,
   getLegacyGlobalPolicyPath,
   getLegacyProjectPolicyPath,
@@ -272,6 +273,7 @@ export function loadAndMergeConfigs(
   const allIssues: string[] = [];
 
   const newGlobalPath = getGlobalConfigPath(agentDir);
+  const configsDirPath = getGlobalConfigsDirConfigPath(agentDir);
   const newProjectPath = getProjectConfigPath(cwd);
   const legacyGlobalPolicyPath = getLegacyGlobalPolicyPath(agentDir);
   const legacyProjectPolicyPath = getLegacyProjectPolicyPath(cwd);
@@ -315,6 +317,13 @@ export function loadAndMergeConfigs(
   allIssues.push(...globalResult.issues);
   const globalConfig = globalResult.config;
   merged = mergeUnifiedConfigs(merged, globalConfig);
+
+  // 3b. Configs-dir global config (lower precedence than the standard path)
+  if (normalize(configsDirPath) !== normalize(newGlobalPath)) {
+    const configsDirResult = loadUnifiedConfig(configsDirPath);
+    allIssues.push(...configsDirResult.issues);
+    merged = mergeUnifiedConfigs(merged, configsDirResult.config);
+  }
 
   // 4. Legacy project policy
   if (existsSync(legacyProjectPolicyPath)) {

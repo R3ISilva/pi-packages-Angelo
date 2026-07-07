@@ -34,6 +34,18 @@ export function getProjectAgentsDir(cwd: string): string {
   return join(cwd, ".pi", "agents");
 }
 
+/**
+ * Alternate global config path under the agent configs directory.
+ *
+ * Allows users to place their config at `~/.pi/agent/configs/pi-permission-system.json`
+ * as an alternative to the standard `~/.pi/agent/extensions/pi-permission-system/config.json`.
+ * Loaded with lower precedence than the standard global path so the standard path wins
+ * when both exist.
+ */
+export function getGlobalConfigsDirConfigPath(agentDir: string): string {
+  return join(agentDir, "configs", `${EXTENSION_ID}.json`);
+}
+
 export function getLegacyGlobalPolicyPath(agentDir: string): string {
   return join(agentDir, "pi-permissions.jsonc");
 }
